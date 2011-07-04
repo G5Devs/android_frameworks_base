@@ -2575,4 +2575,10 @@
 
     <!-- Whether to persist the notification for when a usb drive device is plugged in -->
     <bool name="config_persistUsbDriveNotification">false</bool>
+
+    <!-- Contains a list of vendor specific services to start via ServiceManager.
+         Format for each item is: <path_to_service_jar_file>:<service_class_name> -->
+    <string-array name="config_vendorServices">
+    </string-array>
+
 </resources>

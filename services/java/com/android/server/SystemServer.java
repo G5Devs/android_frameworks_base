@@ -35,6 +35,7 @@ import android.os.Environment;
 import android.os.FactoryTest;
 import android.os.IPowerManager;
 import android.os.Looper;
+import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.StrictMode;
@@ -58,6 +59,7 @@ import com.android.server.audio.AudioService;
 import com.android.server.camera.CameraService;
 import com.android.server.clipboard.ClipboardService;
 import com.android.server.content.ContentService;
+import com.android.server.content.ContentWrapper;
 import com.android.server.devicepolicy.DevicePolicyManagerService;
 import com.android.server.display.DisplayManagerService;
 import com.android.server.dreams.DreamManagerService;
@@ -97,6 +99,7 @@ import com.android.server.wm.WindowManagerService;
 
 import cyanogenmod.providers.CMSettings;
 import dalvik.system.VMRuntime;
+import dalvik.system.DexClassLoader;
 
 import java.io.File;
 import java.lang.reflect.Constructor;
@@ -105,6 +108,7 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.lang.reflect.Constructor;
 
 public final class SystemServer {
     private static final String TAG = "SystemServer";
@@ -1030,6 +1034,40 @@ public final class SystemServer {
 
         if (!disableNonCoreServices) {
             mSystemServiceManager.startService(MediaProjectionManagerService.class);
+
+            String[] vendorServices = context.getResources().getStringArray(
+                    com.android.internal.R.array.config_vendorServices);
+
+            if (vendorServices != null && vendorServices.length > 0) {
+                String cachePath = new ContextWrapper(context).getCacheDir().getAbsolutePath();
+                ClassLoader parentLoader = ClassLoader.getSystemClassLoader();
+
+                for (String service : vendorServices) {
+                    String[] parts = service.split(":");
+                    if (parts.length != 2) {
+                        Slog.e(TAG, "Found invalid vendor service " + service);
+                        continue;
+                    }
+
+                   String jarPath = parts[0];
+                    String className = parts[1];
+
+                    try {
+                        /* Intentionally skipping all null checks in this block, as we also want an
+                           error message if class loading or ctor resolution failed. The catch block
+                           conveniently provides that for us also for NullPointerException */
+                        DexClassLoader loader = new DexClassLoader(jarPath, cachePath, null, parentLoader);
+                        Class<?> klass = loader.loadClass(className);
+                        Constructor<?> ctor = klass.getDeclaredConstructors()[0];
+                        Object instance = ctor.newInstance(context);
+
+                        ServiceManager.addService(klass.getSimpleName(), (IBinder) instance);
+                        Slog.i(TAG, "Vendor service " + className + " started.");
+                    } catch (Exception e) {
+                        Slog.e(TAG, "Starting vendor service " + className + " failed.", e);
+                    }
+                }
+            }
         }
 
         // make sure the ADB_ENABLED setting value matches the secure property value
